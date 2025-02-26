@@ -415,7 +415,15 @@ def plot( data, **kwargs ):
     config['type'] = _get_valid_plot_types(config['type'])
     
     dates,opens,highs,lows,closes,volumes = _check_and_prepare_data(data, config)
-
+    volumes_series = pd.DataFrame({'Open Time': dates, 'Volume': volumes})
+    volumes_series['volume_ma'] = volumes_series['Volume'].rolling(window=20).mean()
+    volumes_series['volume_std'] = volumes_series['Volume'].rolling(window=20).std()
+    volumes_series['volume_z_score'] = (volumes_series['Volume'] - volumes_series['volume_ma']) / volumes_series['volume_std']
+    volumes_series['volume_spike'] = volumes_series['volume_z_score'] > 2.0
+    volumes_series['spike_magnitude'] = np.where(volumes_series['volume_spike'], 
+                                     volumes_series['Volume'] / volumes_series['volume_ma'], 
+                                     1.0)
+    
     config['xlim'] = _check_and_convert_xlim_configuration(data, config)
 
     if config['type'] in VALID_PMOVE_TYPES and config['addplot'] is not None:
@@ -675,11 +683,7 @@ def plot( data, **kwargs ):
     if config['volume']:
         mc = style['marketcolors']
         vup,vdown = mc['volume'].values()
-        #-- print('vup,vdown=',vup,vdown)
         vcolors = _updown_colors(vup, vdown, opens, closes, use_prev_close=style['marketcolors']['vcdopcod'])
-        #-- print('len(vcolors),len(opens),len(closes)=',len(vcolors),len(opens),len(closes))
-        #-- print('vcolors=',vcolors)
-
         w  = config['_width_config']['volume_width']
         lw = config['_width_config']['volume_linewidth']
 
@@ -697,7 +701,12 @@ def plot( data, **kwargs ):
            valp = mc['volume_alpha']
         else:
            valp = 1.0
+        spike_points = volumes_series[volumes_series['volume_spike']]
         volumeAxes.bar(xdates,volumes,width=w,linewidth=lw,color=vcolors,ec=edgecolors,alpha=valp)
+        volumeAxes.plot(volumes_series.index, volumes_series['volume_ma'], color='orange', label=f'MA{20}')  
+        volumeAxes.bar(spike_points.index, spike_points['Volume'], 
+                    width=w, edgecolor=edgecolors, alpha=1,
+                    color=vcolors, label='Đột biến', zorder=3)     
         if config['volume_ylim'] is not None:
             vymin = config['volume_ylim'][0]
             vymax = config['volume_ylim'][1]
